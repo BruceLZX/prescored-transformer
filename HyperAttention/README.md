@@ -18,7 +18,7 @@ The requirements of the code is listed in the requirements.txt file.
 
 The repository contains two benchmark experiments under the following files:
 
-1. `benchmark_single_attention_layer.py`:  This code is for a benchmark estimating (GPU) runtimes of HyperAttention and FlashAttention exploring the sequence lengths from 1K to 131k. To run, 
+1. `benchmark_single_layer.py`:  This code is for a benchmark estimating (GPU) runtimes of HyperAttention and FlashAttention exploring the sequence lengths from 1K to 131k. To run, 
     ```shell
     python benchmark_single_attention_layer.py --attn_method hyper 
     ```
