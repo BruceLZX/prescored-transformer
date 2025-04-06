@@ -62,9 +62,9 @@ The module has the following parameters:
 - ```block_size```: the size of blocks for the block-diagonal approximation. The default is 256.
 - ```sample_size```: the number of sampled columns in the attention matrix $A$. The default is 256.
 - ```min_seq_len```: minimum sequence length that HyperAttention applies. When the sequence length is smaller than this value we compute exactly using the FlashAttention because additional operations of HyperAttention may not negligble. The default value is ```4096```.
--```top_k```: the number of keys passed from scoring method to HyperAttention. The default value is ```2048```.
--```score_method```: the scoring method used to find important keys before HyperAttention, other methods are identified in the benchmark_patch_llm.py.
--```use_prescore```: the switch to devide using prescore method or not. 1 stands for yes and 0 stands for no.
+- ```top_k```: the number of keys passed from scoring method to HyperAttention. The default value is ```2048```.
+- ```score_method```: the scoring method used to find important keys before HyperAttention, other methods are identified in the benchmark_patch_llm.py.
+- ```use_prescore```: the switch to devide using prescore method or not. 1 stands for yes and 0 stands for no.
 
 # License
 The code is licensed under the Apache 2.0 license.
