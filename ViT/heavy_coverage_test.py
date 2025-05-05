@@ -57,6 +57,47 @@ def batched_kmeans_sampling(keys, num_clusters, num_samples, num_iters=10):
     sampled_indices = sampled_indices_flat.view(B, H, num_samples)
     return sampled_indices
 
+# #kmedian
+# def batched_kmeans_sampling(keys, num_clusters, num_samples, num_iters=10):
+#     B, H, K, D = keys.shape
+#     device = keys.device
+
+#     # initialize centroids
+#     rand_idx = torch.randint(0, K, (B, H, num_clusters), device=device)
+#     centroids = torch.gather(
+#         keys, 2,
+#         rand_idx.unsqueeze(-1).expand(B, H, num_clusters, D)
+#     )
+
+#     for _ in range(num_iters):
+#         # cast to full precision for distance
+#         keys_fp = keys.float()
+#         centroids_fp = centroids.float()
+
+#         # compute L2 dists in fp32, then cast back if you like
+#         dists = torch.cdist(keys_fp, centroids_fp, p=2).to(keys.dtype)
+#         assignments = torch.argmin(dists, dim=-1)
+#         one_hot = F.one_hot(assignments, num_clusters).to(keys.dtype)
+#         centroid_sums = torch.matmul(one_hot.transpose(2, 3), keys)
+#         counts = one_hot.transpose(2, 3).sum(dim=-1, keepdim=True)
+#         new_centroids = centroid_sums / (counts + 1e-6)
+#         empty_mask = (counts < 1e-6)
+#         centroids = torch.where(empty_mask, centroids, new_centroids)
+
+#     # final sampling step
+#     keys_fp = keys.float()
+#     centroids_fp = centroids.float()
+#     dists = torch.cdist(keys_fp, centroids_fp, p=2).to(keys.dtype)
+#     assignments = torch.argmin(dists, dim=-1).unsqueeze(-1)
+#     key_dists = torch.gather(dists, dim=-1, index=assignments).squeeze(-1)
+
+#     probs = key_dists / (key_dists.sum(dim=-1, keepdim=True) + 1e-6)
+#     probs_flat = probs.view(B * H, K).clamp(min=1e-8)
+#     probs_flat = probs_flat / probs_flat.sum(dim=1, keepdim=True)
+
+#     sampled_indices_flat = torch.multinomial(probs_flat, num_samples, replacement=False)
+#     return sampled_indices_flat.view(B, H, num_samples)
+
 class CustomKMeansAttention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=True, attn_drop=0.0, proj_drop=0.0,
                  num_clusters=4, num_samples=32, num_iters=10, epsilon=0.01):

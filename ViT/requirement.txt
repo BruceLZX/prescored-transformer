@@ -1,0 +1,7 @@
+torch==2.6.0
+torchvision==0.21.0
+timm==1.0.15
+datasets==3.4.1
+Pillow==11.0.0
+numpy==1.26.4
+tqdm==4.67.1
