@@ -29,7 +29,7 @@ This folder contains the code to test our prescored method on Vision Transformer
 ## Requirements
 - Python 3.x
 - PyTorch
-- Additional dependencies listed in `requirement.txt`.
+- Additional dependencies listed in `requirements.txt`.
 
 # License
 The code is licensed under the Apache 2.0 license.
