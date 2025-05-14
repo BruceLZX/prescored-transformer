@@ -32,7 +32,8 @@ class HyperAttention(torch.nn.Module):
         self.kmeans_call_count = 0
         self.kmeans_update_freq = 50
         self.score_method = score_method
-        
+
+        self.gaussian_sigma_scale = 1.3
 
         
     def forward(self, query: torch.tensor, key: torch.tensor, value: torch.tensor, scale=None, causal=False, return_lse=False):
@@ -116,31 +117,33 @@ class HyperAttention(torch.nn.Module):
 
         if self.use_prescore == 1:
             if self.score_method == "kmeans":
-                scores = self._compute_kmeans_scores(query, key)  # [B, H, N_key]
+                scores = self._compute_kmeans_scores(query, key)
             elif self.score_method == "lev":
-                scores = self._compute_lev_scores(key)  # shape = [bsz, hsz, n_key]
+                scores = self._compute_lev_scores(key)
             elif self.score_method == "kmedian":
-                scores = self._compute_kmedian_scores(query, key) 
-            # Determine mask: here, as an example, we keep keys with scores below a threshold
-            threshold = self.threshold  # define an appropriate threshold or strategy
-
-           
-            if threshold > 0.0:
-                mask = (scores >= self.kmeans_threshold)
+                scores = self._compute_kmedian_scores(query, key)
+            elif self.score_method == "kmeans_kernel":
+                scores = self._compute_kmeans_kernel_scores(key)
+            elif self.score_method == "gaussian_kernel":
+                scores = self._compute_gaussian_kernel_scores(key)
             else:
-                top_k = min(self.topk,n_key)
-                #top_k = n_key
+                raise ValueError(f"Unknown score_method {self.score_method}")
+
+            # ---------------- selection ----------------
+            if self.threshold > 0.0:
+                mask = (scores >= self.threshold)
+            else:
+                top_k = min(self.topk, n_key)
                 top_vals, top_idx = torch.topk(scores, k=top_k, dim=-1)
                 mask = torch.zeros_like(scores, dtype=torch.bool)
                 for b_i in range(batch_size):
                     for hh_i in range(head_size):
                         mask[b_i, hh_i, top_idx[b_i, hh_i]] = True
-            # Mask the keys (broadcast mask along last dim)
-            #key = key * mask.unsqueeze(-1)
+
             key = torch.where(mask.unsqueeze(-1), key, torch.zeros_like(key))
             value = torch.where(mask.unsqueeze(-1), value, torch.zeros_like(value))
 
-            # Force the projection vector dtype/device to be consistent with LSH to avoid BF16 / Float conflicts
+            # ensure dtype/device consistency with LSH projections
             proj_dtype = self.lsh.proj_dir.dtype
             proj_device = self.lsh.proj_dir.device
             key = key.to(device=proj_device, dtype=proj_dtype)
@@ -385,6 +388,53 @@ class HyperAttention(torch.nn.Module):
                     values, _ = data_2d[mask].median(dim=0)
                     centroids[c] = values
         return centroids
+
+
+    def _compute_kmeans_kernel_scores(self, key: torch.Tensor) -> torch.Tensor:
+        """Kernelised variant of K‑Means pre‑scoring.
+
+        For each key token we compute its squared Euclidean distance to the nearest centroid and
+        map it through a Gaussian/RBF kernel exp(-d^2 / (2σ^2)).  σ is estimated on‑the‑fly as the
+        mean of the minimum distances and scaled by ``self.gaussian_sigma_scale``.
+        """
+        bsz, hsz, n_key, dim = key.shape
+        device = key.device
+
+        # refresh or reuse centroids
+        self.kmeans_call_count += 1
+        do_update = (self.kmeans_centroids is None) or (self.kmeans_call_count % self.kmeans_update_freq == 1)
+
+        keys_2d = key.view(bsz * hsz, n_key, dim).float()
+        if do_update:
+            k_clusters = max(1, min(256, self.topk // 4))
+            centroids = self._big_kmeans(keys_2d, k_clusters, k_iters=10)
+            self.kmeans_centroids = centroids
+        else:
+            centroids = self.kmeans_centroids
+
+        # pairwise distances and assignment
+        dist = torch.cdist(keys_2d, centroids, p=2)  # [B*H, N, k]
+        min_dist, _ = dist.min(dim=-1)               # [B*H, N]
+
+        # estimate σ and compute RBF kernel value
+        sigma = (min_dist.mean(dim=-1, keepdim=True) * self.gaussian_sigma_scale).clamp(min=1e-6)
+        kernel_vals = torch.exp(- (min_dist ** 2) / (2 * sigma ** 2))  # [B*H, N]
+
+        scores = kernel_vals.view(bsz, hsz, n_key)
+        return scores
+
+    def _compute_gaussian_kernel_scores(self, key: torch.Tensor) -> torch.Tensor:
+        """Gaussian kernel scores using the vector norm of each key.
+
+        Score_i = exp(-||k_i||^2 / (2σ^2)) where σ is data‑driven (mean of squared norms) times
+        ``self.gaussian_sigma_scale``.  This is a simple content‑based saliency signal that favours
+        low‑energy keys (or high‑energy ones if you flip the inequality in top‑k selection).
+        """
+        # compute squared L2 norms in float32 to avoid precision loss
+        norm_sq = torch.norm(key.float(), dim=-1).pow(2)   # [B, H, N]
+        sigma = (norm_sq.mean(dim=(-2, -1), keepdim=True) * self.gaussian_sigma_scale).clamp(min=1e-6)
+        scores = torch.exp(- norm_sq / (2 * sigma ** 2))
+        return scores
 
 
 def ortho_pytorch(x: torch.Tensor) -> torch.Tensor:
