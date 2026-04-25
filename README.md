@@ -2,8 +2,6 @@
 
 The repository is the PyTorch implementation of pre-scoreing attention paper on Hyperattention and ViT:
 
-Paper is not published yet...
-
 Details of implementation are in each folder.
 
 # License
